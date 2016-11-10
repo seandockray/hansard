@@ -1,0 +1,58 @@
+.cycle-slideshow { height: 2000px; width: 500px; margin: auto }
+.cycle-slideshow div ul { 
+	font-family: 'Special Elite', cursive;
+  list-style-type:none;
+  color: #333;
+  line-height: 1.5;
+  padding-left: 0px;
+  margin-top: 0px;
+}
+.cycle-slideshow div h2 { 
+  font-family: sans-serif;
+  font-size: 2em;
+  color: #333;
+}
+.cycle-slideshow div ul li strong { 
+  font-family: sans-serif;
+  color: #000;
+  font-weight: 800;
+  font-size: 0.75em;
+  padding-bottom: 0px;
+}
+#pager {
+  margin: 0px;
+  padding: 0px;
+  font-family: 'Special Elite', cursive;
+  font-size: 0.6em;
+  color: #DD1155;
+  cursor: pointer;
+  float: right;
+}
+#pager .button {
+  text-decoration: none;
+  color: #DD1155;
+}
+#title h1 {
+  float:left;
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.9em;
+}
+#title h1 a {
+  color: #DD1155;
+  text-decoration: none;
+}
+#title > a {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+}
+.source {
+  font-family: monospace;
+  font-size: 0.9em;
+  color: #DD1155;
+  text-decoration: none;
+}
+body {
+  margin: 10px;
+  padding: 0px;
+}
