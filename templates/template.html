@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Interjections</title>
+<link href="https://fonts.googleapis.com/css?family=Oswald|Special+Elite" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.js"></script>
+<script type="text/javascript" src="../jquery.cycle.all.min.js"></script>
+</head>
+<body>
+  <div id="title">
+      <h1>interjections: <a href="${prev}">&lt;&lt;</a> ${date}</h1>
+      <a href="https://github.com/seandockray/hansard">?</a>
+  </div>
+  <div id="pager" class="external">
+    <div>
+      <span id="prev" class="button">&lt;Prev </span>
+      <span class="numbers"> - </span>
+      <span id="next" class="button"> Next&gt;</span>
+    </div>
+    
+  </div>
+	<div class="cycle-slideshow"
+    data-cycle-prev="#prev"
+    data-cycle-next="#next"
+    data-cycle-fx="fade"
+    data-cycle-timeout="0"
+    data-cycle-slides="> div"
+    >
+% for slide in slides:
+${slide}
+% endfor
+  </div>
+</body>
+</html>
