@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 
 import os, sys
+import getopt
 import xml.etree.ElementTree as etree      
 import urllib
 from sgmllib import SGMLParser
+from HTMLParser import HTMLParser
 
 from mako.template import Template
+import sqlite3
 
 representative_debates_loc = 'http://data.openaustralia.org/scrapedxml/representatives_debates/'
 senate_debates_loc = 'http://data.openaustralia.org/scrapedxml/senate_debates/'
+conn = sqlite3.connect('db.sql')
 
 class URLLister(SGMLParser):
     def reset(self):
@@ -20,14 +24,25 @@ class URLLister(SGMLParser):
         if href:
             self.urls.extend(href)
 
+class MLStripper(HTMLParser):
+    def __init__(self):
+        self.reset()
+        self.fed = []
+    def handle_data(self, d):
+        self.fed.append(d)
+    def get_data(self):
+        return ''.join(self.fed)
+
 class Major(object):
-    def __init__(self, title):
+    def __init__(self, title, id):
         self.title = title
+        self.id = id
         self.minors = []
 
 class Minor(object):
-    def __init__(self, title):
+    def __init__(self, title, id):
         self.title = title
+        self.id = id
         self.timeline = []
         self.current_speech = None
 
@@ -78,6 +93,12 @@ class Speech(object):
     def participants(self):
         return [d['speakername'] for d in self.parts]
 
+    def get_script(self):
+        text = []
+        for p in self.parts:
+            text.append((p['speakername'], to_text(p['node'])))
+        return text
+
     def interjections(self, include_supplementary_questions=False, min_run=3):
         interjections = []
         for p in self.parts:
@@ -89,11 +110,9 @@ class Speech(object):
                 interjections.append((p['speakername'], t))
             elif p['talktype']=='continuation':
                 t = to_text(p['node'], 1)
-                #interjections.append((p['speakername'], trunc(p['text'], 200)))
                 interjections.append((p['speakername'], t))
             elif p['talktype']=='speech' and len(self.parts)>1:
                 t = to_text(p['node'], -1)
-                #interjections.append((p['speakername'], trunc(p['text'], 200, reverse=True)))
                 interjections.append((p['speakername'], t))
         # filtering out supplementary questions, which aren't that interesting
         if not include_supplementary_questions and len(interjections)<4:
@@ -121,40 +140,14 @@ def to_text(node, truncate=False):
     elif truncate<0:
         return "\n".join(paras[truncate:])
 
-def trunc(content, length=100, suffix='...', reverse=False):
-    if len(content) <= length:
-        return content
-    else:
-        if reverse:
-            content = content[::-1]
-        s = ' '.join(content[:length+1].split(' ')[0:-1]) + suffix
-        if reverse:
-            return s[::-1]
-        else:
-            return s
-
-def truncate_paragraphs(text, num=1, reverse=False):
-    text = '</p>'+text.strip()+'<p>'
-    parts = text.split('</p><p>')[1:-1]
-    ret = ''
-    if reverse:
-        print 'XX=',len(parts[-1*num:])
-        for p in parts[-1*num:]:
-            ret = "%s%s%s%s" % (ret, '<p>', p, '</p>')
-        return ret
-    else:
-        for p in parts[:num]:
-            ret = "%s%s%s%s" % (ret, '<p>', p,'</p>')
-        return ret
-
 
 def handle_major_heading(node):
-    return node.text.strip()
+    return node.text.strip(), node.attrib['id'].split('/')[-1]
     #print node.attrib
     pass
 
 def handle_minor_heading(node):
-    return node.text.strip()
+    return node.text.strip(), node.attrib['id'].split('/')[-1]
     #print node.attrib
     pass
 
@@ -214,18 +207,6 @@ def stats(node):
             counts[child.tag] += 1
     return counts
 
-        
-"""
-for major in majors:
-    #print major.title
-    for minor in major.minors:
-        for speech in minor.interjected_speeches():
-            print '# ',major.title
-            print '# ',minor.title
-            for interjection in speech:
-                print "%s: %s" % interjection
-"""
-
 
 def process_xml(xml_file):
     ''' Processes an xml file returning majors '''
@@ -236,14 +217,14 @@ def process_xml(xml_file):
     for child in root:
         data = handle(child)
         if child.tag=='major-heading':
-            majors.append(Major(data))
+            majors.append(Major(data[0], data[1]))
         elif child.tag=='minor-heading':
-            majors[-1].minors.append(Minor(data))
+            majors[-1].minors.append(Minor(data[0], data[1]))
         else:
             majors[-1].minors[-1].add_event(child.tag, data)
     return majors
 
-def xml_to_interjections(xml_file, html_file, prev):
+def xml_to_interjections(xml_file, html_file, date, prev):
     ''' Extracts all interjections from an xml file and saves to html '''
     majors = process_xml(xml_file)
     pt = Template(filename='templates/template.html', input_encoding='utf-8', output_encoding='utf-8')
@@ -255,10 +236,10 @@ def xml_to_interjections(xml_file, html_file, prev):
                 slides.append(st.render(interjections=interjections, id=speech.id, minor_heading=minor.title, url=speech.url))
     with open(html_file, 'w') as f:
         print "- wrote ",len(slides),"slides to ",html_file
-        f.write(pt.render(slides=slides, date=xml_file.split('.')[0], prev=prev))
+        f.write(pt.render(slides=slides, date=date, prev=prev))
 
 
-def process_loc(loc, save_dir, force=False):
+def process_loc(loc, save_dir, xml_dir, force=False, keep_xml=False, index=False):
     ''' Processes an online directory of hansard xml files '''
     usock = urllib.urlopen(loc)
     parser = URLLister()
@@ -272,21 +253,223 @@ def process_loc(loc, save_dir, force=False):
             print url, ",", count, " of ", len(parser.urls)
             html_file = url.split('.')[0]+'.html'
             dest_file = os.path.join(save_dir, html_file)
+            xml_file = os.path.join(xml_dir, url)
+            if not os.path.exists(xml_file):
+                print ".. Downloading"
+                urllib.urlretrieve (loc + url, xml_file)
+            if index:
+                print ".. Indexing noun phrases"
+                process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
             if force or not os.path.exists(dest_file):
-                urllib.urlretrieve (loc + url, url)
-                xml_to_interjections(url, dest_file, prev)
+                print ".. Building HTML"
+                xml_to_interjections(xml_file, dest_file, url.split('.')[0], prev)
                 prev = html_file
-                os.unlink(url)
+            if not keep_xml:
+                os.unlink(xml_file)
+            count += 1
+
+def process_speeches(xml_file, date, house):
+    c = conn.cursor()
+    year = date.split('-')[0]
+    count = 0
+    from textblob import TextBlob
+    majors = process_xml(xml_file)
+    for major in majors:
+        for minor in major.minors:
+            for event in minor.timeline:
+                if type(event) is Speech:
+                    for speaker, speech in event.get_script():
+                        s = MLStripper()
+                        s.feed(speech)
+                        blob = TextBlob(s.get_data())
+                        #print blob.noun_phrases
+                        for np in blob.noun_phrases:
+                            query = """insert into noun_phrases 
+                                (phrase, speakername, speechid, headingid, headingtitle, date, year, house, url) 
+                                values (?, ?, ?, ?, ?, ?, ?, ?, ?) """
+                            values = (np, speaker, event.id, minor.id, minor.title, date, year, house, event.url)
+                            try:
+                                c.execute(query, values)
+                            except:
+                                print query
+                                print                        
+                        count += len(blob.noun_phrases)
+            conn.commit()
+    print count
+    c.close()
+
+
+###
+# DB related
+###
+def init_db():
+    c = conn.cursor()
+    try:
+        c.execute('''drop table noun_phrases''')
+    except:
+        pass
+    c.execute('''create table noun_phrases
+(phrase text, speakername text, speechid text, headingid text, headingtitle text, date text, year text, house text, url text)''')        
+    conn.commit()
+    c.close()
+
+def get_noun_phrases_for_speaker(speakername, how_many=25, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = (speakername, from_date, to_date, how_many)
+        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? and date>=? and date<=? group by phrase order by count(phrase) desc limit ?', values)
+    else:
+        values = (speakername, how_many)
+        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? group by phrase order by count(phrase) desc limit ?', values)
+    for row in c:
+        print row
+    c.close()
+
+
+def get_phrase_usage(speakername, phrase, from_date=None, to_date=None):
+    ''' Gets the count of how many time the speaker used this phrase between two optional dates '''
+    c = conn.cursor()
+    if from_date and to_date:
+        values = (speakername, '%'+phrase+'%', from_date, to_date)
+        c.execute('select count(phrase) from noun_phrases where speakername=? and phrase LIKE ? and date>=? and date<=? group by phrase', values)
+    else:
+        values = (speakername, '%'+phrase+'%')
+        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? and phrase LIKE ? group by phrase', values)
+    for row in c:
+        print row
+    c.close()
+
+
+def get_speakers_for_noun_phrase(phrase, how_many=25, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = (phrase, from_date, to_date, how_many)
+        c.execute('select speakername, count(speakername) from noun_phrases where phrase=? and date>=? and date<=? group by speakername order by count(speakername) desc limit ?', values)
+    else:
+        values = (phrase, how_many)
+        c.execute('select speakername, count(speakername) from noun_phrases where phrase=? group by speakername order by count(speakername) desc limit ?', values)
+    for row in c:
+        print row
+    c.close()
+
+def get_speakers_for_fragment(phrase, how_many=25, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = ('%'+phrase+'%', from_date, to_date, how_many)
+        c.execute('select speakername, count(speakername) from noun_phrases where phrase LIKE ? and date>=? and date<=? group by speakername order by count(speakername) desc limit ?', values)
+    else:
+        values = ('%'+phrase+'%', how_many)
+        c.execute('select speakername, count(speakername) from noun_phrases where phrase LIKE ? group by speakername order by count(speakername) desc limit ?', values)
+    for row in c:
+        print row
+    c.close()
+
+def get_noun_phrases_with(fragment, how_many=25, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = ('%'+fragment+'%', from_date, to_date, how_many)
+        c.execute('select phrase, count(phrase) from noun_phrases where phrase LIKE ? and date>=? and date<=? group by phrase order by count(phrase) desc limit ?', values)
+    else:
+        values = ('%'+fragment+'%', how_many)
+        c.execute('select phrase, count(phrase) from noun_phrases where phrase LIKE ? group by phrase order by count(phrase) desc limit ?', values)
+    for row in c:
+        print row
+    c.close()
+
+def load_noun_phrases(phrase, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = (phrase, from_date, to_date)
+        c.execute('select * from noun_phrases where phrase=? and date>=? and date<=? order by date desc', values)
+    else:
+        values = (phrase,)
+        c.execute('select * from noun_phrases where phrase=? order by date desc', values)
+    for row in c:
+        print row
+    c.close()
+
+def load_noun_phrases_for_speaker(phrase, speaker, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = (phrase, speaker, from_date, to_date)
+        c.execute('select * from noun_phrases where phrase=? and speakername=? and date>=? and date<=? order by date desc', values)
+    else:
+        values = (phrase, speaker)
+        c.execute('select * from noun_phrases where phrase=? and speakername=? order by date desc', values)
+    for row in c:
+        print row
+    c.close()
+
+def load_noun_phrases_by_fragment(fragment, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = ('%'+fragment+'%', from_date, to_date)
+        c.execute('select * from noun_phrases where phrase LIKE ? and date>=? and date<=? order by date desc', values)
+    else:
+        values = ('%'+fragment+'%',)
+        c.execute('select * from noun_phrases where phrase LIKE ? order by date desc', values)
+    for row in c:
+        print row
+    c.close()
+
+def load_noun_phrases_by_fragment_for_speaker(fragment, speaker, from_date=None, to_date=None):
+    c = conn.cursor()
+    if from_date and to_date:
+        values = ('%'+fragment+'%', speaker, from_date, to_date)
+        c.execute('select * from noun_phrases where phrase LIKE ? and speakername=? and date>=? and date<=? order by date desc', values)
+    else:
+        values = ('%'+fragment+'%', speaker)
+        c.execute('select * from noun_phrases where phrase LIKE ? and speakername=? order by date desc', values)
+    for row in c:
+        print row
+    c.close()
 
 
 if __name__=="__main__":
+    force = False # force rebuild the html
+    keep = False # keep xml files around
+    index = False #index the noun phrases?
+    try:
+      opts, args = getopt.getopt(sys.argv[1:],"hfkci",["force","keep","create","index"])
+    except getopt.GetoptError:
+      print 'app.py -f -k'
+      sys.exit(2)
+    for opt, arg in opts:
+      if opt == '-h':
+         print 'app.py -f (force rebuild of html) -k (keep xml files) -i(index noun phrases) -c (create database)'
+         sys.exit()
+      elif opt in ("-f", "--force"):
+         force = True
+      elif opt in ("-k", "--keep"):
+         keep = True
+      elif opt in ("-i", "--index"):
+         index = True        
+      elif opt in ("-c", "--create"):
+         init_db()
+         print "Initialized the database"
+         sys.exit()
+    # Now the program
+    xml_senate_dest = os.path.join('xml','s')
+    xml_representative_dest = os.path.join('xml','r')
     senate_dest = os.path.join('html','s')
     representative_dest = os.path.join('html','r')
+    if not os.path.exists(xml_senate_dest):
+        os.makedirs(xml_senate_dest)
+    if not os.path.exists(xml_representative_dest):
+        os.makedirs(xml_representative_dest)
     if not os.path.exists(senate_dest):
         os.makedirs(senate_dest)
     if not os.path.exists(representative_dest):
         os.makedirs(representative_dest)
-    process_loc(senate_debates_loc, senate_dest, force=True)
-    process_loc(representative_debates_loc, representative_dest)
-
-
+    process_loc(senate_debates_loc, senate_dest, xml_senate_dest, force=force, keep_xml=keep, index=index)
+    process_loc(representative_debates_loc, representative_dest, xml_representative_dest, force=force, keep_xml=keep, index=index)
+    
+    
+    #get_noun_phrases_for_speaker('Ian Gordon Campbell')
+    #get_speakers_for_noun_phrase('energy use')
+    #get_noun_phrases_with('terror')
+    #get_speakers_for_fragment('terror')
+    #get_phrase_usage('Ian Gordon Campbell', 'energy use')
+    #load_noun_phrases('energy use')
+    #load_noun_phrases_for_speaker('energy use','Ian Gordon Campbell')
+    #load_noun_phrases_by_fragment('terror')

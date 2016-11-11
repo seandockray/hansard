@@ -1,5 +1,6 @@
 venv/
 html/*
 *.xml
+db.sql
 !html/style.css
 !html/jquery.cycle.all.min.js
