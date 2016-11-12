@@ -9,10 +9,12 @@ from HTMLParser import HTMLParser
 
 from mako.template import Template
 import sqlite3
+from pymongo import MongoClient
 
 representative_debates_loc = 'http://data.openaustralia.org/scrapedxml/representatives_debates/'
 senate_debates_loc = 'http://data.openaustralia.org/scrapedxml/senate_debates/'
 conn = sqlite3.connect('db.sql')
+client = MongoClient('localhost', 27017)
 
 class URLLister(SGMLParser):
     def reset(self):
@@ -295,14 +297,10 @@ def process_speeches(xml_file, date, house):
                         noun_phrases = [match.constituents()[0].string.lower() for match in search('NP', pt) if match.constituents()[0].string.lower() not in ['i','you','it']]
                         #adjectives = [match.constituents()[0].string.lower() for match in search('JJ', pt) ]
                         for np in noun_phrases:
-                            query = """insert into noun_phrases 
-                                (phrase, speakername, speechid, headingid, headingtitle, date, year, house, url) 
-                                values (?, ?, ?, ?, ?, ?, ?, ?, ?) """
-                            values = (np, speaker, event.id, minor.id, minor.title, date, year, house, event.url)
                             try:
-                                c.execute(query, values)
+                                insert_record(np, speaker, event.id, minor.id, minor.title, date, year, house, event.url)
                             except:
-                                print query
+                                print "Error: ", np, speaker, event.id, minor.id, minor.title, date, year, house
                                 print                        
                         count += len(noun_phrases)
                         
@@ -311,10 +309,63 @@ def process_speeches(xml_file, date, house):
     c.close()
 
 
+def insert_record(phrase, speakername, speechid, headingid, headingtitle, date, year, house, url):
+    db = client.hansard
+    doc = {
+        "phrase" : phrase,
+        "speakername" : speakername,
+        "speechid" : speechid,
+        "headingid" : headingid,
+        "headingtitle" : headingtitle,
+        "date" : date,
+        "year" : year,
+        "house" : house,
+        "url" : url,
+    }
+    db.phrases.insert_one(doc)
+
+def copy_sqlite_to_mongo():
+    ''' This will be deleted after it is run once '''
+    db = client.hansard
+    c = conn.cursor()
+    start = 0
+    step = 10000
+    batch_size = 100
+    batch = []
+    go = True
+    while go:
+        go = False
+        values = (start,step)
+        c.execute('select * from noun_phrases limit ?,?', values)
+        print start
+        for row in c:
+            go = True
+            batch.append({
+                "phrase" : row[0],
+                "speakername" : row[1],
+                "speechid" : row[2],
+                "headingid" : row[3],
+                "headingtitle" : row[4],
+                "date" : row[5],
+                "year" : row[6],
+                "house" : row[7],
+                "url" : row[8],
+            })
+            if len(batch)>=batch_size:
+                db.phrases.insert_many(batch)
+                batch = []
+        if len(batch)>0:
+            db.phrases.insert_many(batch)
+            batch = []
+        start += step
+    c.close()
+
 ###
 # DB related
 ###
 def init_db():
+    copy_sqlite_to_mongo()
+    """
     c = conn.cursor()
     try:
         c.execute('''drop table noun_phrases''')
@@ -324,6 +375,7 @@ def init_db():
 (phrase text, speakername text, speechid text, headingid text, headingtitle text, date text, year text, house text, url text)''')        
     conn.commit()
     c.close()
+    """
 
 
 if __name__=="__main__":
