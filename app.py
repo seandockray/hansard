@@ -257,6 +257,12 @@ def process_loc(loc, save_dir, xml_dir, force=False, keep_xml=False, index=False
             if not os.path.exists(xml_file):
                 print ".. Downloading"
                 urllib.urlretrieve (loc + url, xml_file)
+                # For now, always index the new xml files
+                try:
+                    print ".. Indexing noun phrases"
+                    process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
+                except:
+                    print 'Failed to index:',xml_file
             if index:
                 print ".. Indexing noun phrases"
                 process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
@@ -311,117 +317,6 @@ def init_db():
     c.execute('''create table noun_phrases
 (phrase text, speakername text, speechid text, headingid text, headingtitle text, date text, year text, house text, url text)''')        
     conn.commit()
-    c.close()
-
-def get_noun_phrases_for_speaker(speakername, how_many=25, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = (speakername, from_date, to_date, how_many)
-        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? and date>=? and date<=? group by phrase order by count(phrase) desc limit ?', values)
-    else:
-        values = (speakername, how_many)
-        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? group by phrase order by count(phrase) desc limit ?', values)
-    for row in c:
-        print row
-    c.close()
-
-
-def get_phrase_usage(speakername, phrase, from_date=None, to_date=None):
-    ''' Gets the count of how many time the speaker used this phrase between two optional dates '''
-    c = conn.cursor()
-    if from_date and to_date:
-        values = (speakername, '%'+phrase+'%', from_date, to_date)
-        c.execute('select count(phrase) from noun_phrases where speakername=? and phrase LIKE ? and date>=? and date<=? group by phrase', values)
-    else:
-        values = (speakername, '%'+phrase+'%')
-        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? and phrase LIKE ? group by phrase', values)
-    for row in c:
-        print row
-    c.close()
-
-
-def get_speakers_for_noun_phrase(phrase, how_many=25, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = (phrase, from_date, to_date, how_many)
-        c.execute('select speakername, count(speakername) from noun_phrases where phrase=? and date>=? and date<=? group by speakername order by count(speakername) desc limit ?', values)
-    else:
-        values = (phrase, how_many)
-        c.execute('select speakername, count(speakername) from noun_phrases where phrase=? group by speakername order by count(speakername) desc limit ?', values)
-    for row in c:
-        print row
-    c.close()
-
-def get_speakers_for_fragment(phrase, how_many=25, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = ('%'+phrase+'%', from_date, to_date, how_many)
-        c.execute('select speakername, count(speakername) from noun_phrases where phrase LIKE ? and date>=? and date<=? group by speakername order by count(speakername) desc limit ?', values)
-    else:
-        values = ('%'+phrase+'%', how_many)
-        c.execute('select speakername, count(speakername) from noun_phrases where phrase LIKE ? group by speakername order by count(speakername) desc limit ?', values)
-    for row in c:
-        print row
-    c.close()
-
-def get_noun_phrases_with(fragment, how_many=25, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = ('%'+fragment+'%', from_date, to_date, how_many)
-        c.execute('select phrase, count(phrase) from noun_phrases where phrase LIKE ? and date>=? and date<=? group by phrase order by count(phrase) desc limit ?', values)
-    else:
-        values = ('%'+fragment+'%', how_many)
-        c.execute('select phrase, count(phrase) from noun_phrases where phrase LIKE ? group by phrase order by count(phrase) desc limit ?', values)
-    for row in c:
-        print row
-    c.close()
-
-def load_noun_phrases(phrase, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = (phrase, from_date, to_date)
-        c.execute('select * from noun_phrases where phrase=? and date>=? and date<=? order by date desc', values)
-    else:
-        values = (phrase,)
-        c.execute('select * from noun_phrases where phrase=? order by date desc', values)
-    for row in c:
-        print row
-    c.close()
-
-def load_noun_phrases_for_speaker(phrase, speaker, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = (phrase, speaker, from_date, to_date)
-        c.execute('select * from noun_phrases where phrase=? and speakername=? and date>=? and date<=? order by date desc', values)
-    else:
-        values = (phrase, speaker)
-        c.execute('select * from noun_phrases where phrase=? and speakername=? order by date desc', values)
-    for row in c:
-        print row
-    c.close()
-
-def load_noun_phrases_by_fragment(fragment, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = ('%'+fragment+'%', from_date, to_date)
-        c.execute('select * from noun_phrases where phrase LIKE ? and date>=? and date<=? order by date desc', values)
-    else:
-        values = ('%'+fragment+'%',)
-        c.execute('select * from noun_phrases where phrase LIKE ? order by date desc', values)
-    for row in c:
-        print row
-    c.close()
-
-def load_noun_phrases_by_fragment_for_speaker(fragment, speaker, from_date=None, to_date=None):
-    c = conn.cursor()
-    if from_date and to_date:
-        values = ('%'+fragment+'%', speaker, from_date, to_date)
-        c.execute('select * from noun_phrases where phrase LIKE ? and speakername=? and date>=? and date<=? order by date desc', values)
-    else:
-        values = ('%'+fragment+'%', speaker)
-        c.execute('select * from noun_phrases where phrase LIKE ? and speakername=? order by date desc', values)
-    for row in c:
-        print row
     c.close()
 
 
