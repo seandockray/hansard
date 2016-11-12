@@ -16,7 +16,7 @@ def get_noun_phrases_for_speaker(speakername, how_many=25, from_date=None, to_da
         c.execute('select phrase, count(phrase) from noun_phrases where speakername=? and date>=? and date<=? group by phrase order by count(phrase) desc limit ?', values)
     else:
         values = (speakername, how_many)
-        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? group by phrase order by count(phrase) desc limit ?', values)
+        c.execute('select phrase, count(phrase) from noun_phrases where speakername=? AND phrase NOT IN ("I","it") group by phrase order by count(phrase) desc limit ?', values)
     for row in c:
         print row
     c.close()
@@ -151,6 +151,8 @@ if __name__=="__main__":
             globals()[func](arg1)
         else:
             globals()[func]()
+        # test, do another one
+        get_noun_phrases_for_speaker('Ian Gordon Campbell')
     except:
         print "Error in function call"
     #get_noun_phrases_for_speaker('Ian Gordon Campbell')

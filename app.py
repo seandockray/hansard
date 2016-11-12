@@ -278,7 +278,9 @@ def process_speeches(xml_file, date, house):
     c = conn.cursor()
     year = date.split('-')[0]
     count = 0
-    from textblob import TextBlob
+    #from textblob import TextBlob
+    from pattern.en import parsetree
+    from pattern.search import search
     majors = process_xml(xml_file)
     for major in majors:
         for minor in major.minors:
@@ -287,9 +289,12 @@ def process_speeches(xml_file, date, house):
                     for speaker, speech in event.get_script():
                         s = MLStripper()
                         s.feed(speech)
-                        blob = TextBlob(s.get_data())
+                        #blob = TextBlob(s.get_data())
                         #print blob.noun_phrases
-                        for np in blob.noun_phrases:
+                        pt = parsetree(s.get_data(), relations=True, lemmata=True)
+                        noun_phrases = [match.constituents()[0].string.lower() for match in search('NP', pt) if match.constituents()[0].string.lower() not in ['i','you','it']]
+                        #adjectives = [match.constituents()[0].string.lower() for match in search('JJ', pt) ]
+                        for np in noun_phrases:
                             query = """insert into noun_phrases 
                                 (phrase, speakername, speechid, headingid, headingtitle, date, year, house, url) 
                                 values (?, ?, ?, ?, ?, ?, ?, ?, ?) """
@@ -299,7 +304,8 @@ def process_speeches(xml_file, date, house):
                             except:
                                 print query
                                 print                        
-                        count += len(blob.noun_phrases)
+                        count += len(noun_phrases)
+                        
             conn.commit()
     print count
     c.close()
