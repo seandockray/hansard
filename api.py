@@ -7,7 +7,7 @@ import getopt
 import re
 from bson.code import Code
 
-from flask import Flask, jsonify, url_for
+from flask import Flask, request, jsonify, url_for
 from flaskrun import flaskrun
 
 from mako.template import Template
@@ -41,6 +41,37 @@ def get_phrase_speaker_counts(phrase, how_many=25, from_date=None, to_date=None)
         query["date"] = {"$gte": from_date, "$lte": to_date}
     map = Code("function () {"
                 "   emit(this.speakername,1);"
+                "}")
+    reduce = Code("function (key, values) {"
+                "   return Array.sum(values)"
+                "}")
+    results = db.phrases.map_reduce(map, reduce, "results", query=query)
+    for doc in results.find().sort("value", -1).limit(how_many):
+        yield doc
+
+
+def get_heading_phrase_counts(headingtitle, how_many=25):
+    ''' A list of headings by number of occurrences for a phrase '''  
+    query = {"headingtitle": headingtitle}
+    map = Code("function () {"
+                "   emit(this.phrase,1);"
+                "}")
+    reduce = Code("function (key, values) {"
+                "   return Array.sum(values)"
+                "}")
+    results = db.phrases.map_reduce(map, reduce, "results", query=query)
+    for doc in results.find().sort("value", -1).limit(how_many):
+        yield doc
+
+def get_phrase_heading_counts(phrase, speakername=None, how_many=25, from_date=None, to_date=None):
+    ''' A list of headings by number of occurrences for a phrase '''  
+    query = {"phrase": phrase}
+    if from_date and to_date:
+        query["date"] = {"$gte": from_date, "$lte": to_date}
+    if speakername:
+        query["speakername"] = speakername
+    map = Code("function () {"
+                "   emit(this.headingtitle,1);"
                 "}")
     reduce = Code("function (key, values) {"
                 "   return Array.sum(values)"
@@ -87,8 +118,14 @@ def get_phrases_containing(fragment, how_many=25, from_date=None, to_date=None, 
 app = Flask(__name__)
 @app.route("/speaker/<speakername>")
 def speaker_phrases(speakername):
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    if from_date and to_date:
+        data_url = url_for('api_speaker_phrases', speakername=speakername, from_date=from_date, to_date=to_date)
+    else:
+        data_url = url_for('api_speaker_phrases', speakername=speakername)
     t = Template(filename='templates/rhetoric/bar-chart.html')
-    return t.render(data_url=url_for('api_speaker_phrases', speakername=speakername))
+    return t.render(data_url=data_url)
 
 @app.route("/api/v1.0/speaker/<speakername>")
 def api_speaker_phrases(speakername):
@@ -103,19 +140,77 @@ def api_speaker_phrases(speakername):
     return jsonify(**ret)
 
 @app.route("/phrase/<phrase>")
+@app.route("/phrase/<phrase>/speakers")
 def phrase_speakers(phrase):
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    if from_date and to_date:
+        data_url = url_for('api_phrase_speakers', phrase=phrase, from_date=from_date, to_date=to_date)
+    else:
+        data_url = url_for('api_phrase_speakers', phrase=phrase)
     t = Template(filename='templates/rhetoric/bubble-chart.html')
-    return t.render(data_url=url_for('api_phrase_speakers', phrase=phrase))
+    return t.render(data_url=data_url)
 
-@app.route("/api/v1.0/phrase/<phrase>")
+@app.route("/api/v1.0/phrase/<phrase>/speakers")
 def api_phrase_speakers(phrase):
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    if from_date and to_date:
+        results = get_phrase_speaker_counts(phrase, how_many=50, from_date=from_date, to_date=to_date)
+    else:
+        results = get_phrase_speaker_counts(phrase, how_many=50)
     ret = {"items":[]}
-    results = get_phrase_speaker_counts(phrase, how_many=50)
     for r in results:
         ret["items"].append({
             "label": str(r["_id"]), 
             "num": int(r["value"]),
             "url": url_for('speaker_phrases', speakername=str(r["_id"]))
+            })
+    return jsonify(**ret)
+
+@app.route("/phrase/<phrase>/headings")
+def phrase_headings(phrase):
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    if from_date and to_date:
+        data_url = url_for('api_phrase_headings', phrase=phrase, from_date=from_date, to_date=to_date)
+    else:
+        data_url = url_for('api_phrase_headings', phrase=phrase)
+    t = Template(filename='templates/rhetoric/bubble-chart.html')
+    return t.render(data_url=data_url)
+
+@app.route("/api/v1.0/phrase/<phrase>/headings")
+def api_phrase_headings(phrase):
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    if from_date and to_date:
+        results = get_phrase_heading_counts(phrase, how_many=50, from_date=from_date, to_date=to_date)
+    else:
+        results = get_phrase_heading_counts(phrase, how_many=50)
+    ret = {"items":[]}
+    for r in results:
+        ret["items"].append({
+            "label": str(r["_id"]), 
+            "num": int(r["value"]),
+            "url": url_for('heading_phrases', headingtitle=str(r["_id"]))
+            })
+    return jsonify(**ret)
+
+@app.route("/heading/<headingtitle>/phrases")
+def heading_phrases(headingtitle):
+    data_url = url_for('api_heading_phrases', headingtitle=headingtitle)
+    t = Template(filename='templates/rhetoric/bar-chart.html')
+    return t.render(data_url=data_url)
+
+@app.route("/api/v1.0/heading/<headingtitle>/phrases")
+def api_heading_phrases(headingtitle):
+    results = get_heading_phrase_counts(headingtitle, how_many=50)
+    ret = {"items":[]}
+    for r in results:
+        ret["items"].append({
+            "label": str(r["_id"]), 
+            "num": int(r["value"]),
+            "url": url_for('phrase_speakers', phrase=str(r["_id"]))
             })
     return jsonify(**ret)
 
@@ -126,14 +221,13 @@ def phrase_usage(phrase):
 
 @app.route("/api/v1.0/phrase/<phrase>/usage")
 def api_phrase_usage(phrase):
-    ret = {"items":[]}
+    ret = {"filter_url": url_for('phrase_speakers', phrase=phrase, from_date="FROM_DATE", to_date="TO_DATE"), "items":[]}
     results = get_phrase_usage(phrase)
     for r in results:
         ret["items"].append({
             "Date": str(r["_id"]), 
-            "Usage": int(r["value"]),
-            "url": url_for('phrase_speakers', phrase=phrase, from_date=str(r["_id"]), to_date=str(r["_id"]))
-            })
+            "Usage": int(r["value"])
+        })
     return jsonify(**ret)
 
 if __name__=="__main__":

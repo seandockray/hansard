@@ -8,6 +8,7 @@
 
     d3.json("${data_url}", function(json) {
   
+      var filter_url = json.filter_url;
       var data = json.items;
 
       var myChart = new dimple.chart(svg, data);
@@ -16,6 +17,13 @@
       x.addOrderRule("Date");
       myChart.addMeasureAxis("y", "Usage");
       var s = myChart.addSeries(null, dimple.plot.line);
+
+      s.addEventHandler("click", function (e) {
+        var url = filter_url.replace('FROM_DATE',e.xValue+"-01"); 
+        url = url.replace('TO_DATE',e.xValue+"-31"); 
+        var win = window.open(url, "_blank");
+      });
+
       myChart.draw();
 
     });
