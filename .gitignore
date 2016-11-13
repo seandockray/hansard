@@ -2,5 +2,6 @@ venv/
 html/*
 *.xml
 db.sql
+*.pyc
 !html/style.css
 !html/jquery.cycle.all.min.js

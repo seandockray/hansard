@@ -1,0 +1,24 @@
+<html>
+<div id="chart">
+  <script type="text/javascript" src="http://d3js.org/d3.v2.js"></script>
+  <script src="http://dimplejs.org/dist/dimple.v2.2.0.min.js"></script>
+  <script type="text/javascript">
+
+    var svg = dimple.newSvg("#chart", 800, 400);
+
+    d3.json("${data_url}", function(json) {
+  
+      var data = json.items;
+
+      var myChart = new dimple.chart(svg, data);
+      myChart.setBounds(60, 30, 705, 305);
+      var x = myChart.addCategoryAxis("x", "Date");
+      x.addOrderRule("Date");
+      myChart.addMeasureAxis("y", "Usage");
+      var s = myChart.addSeries(null, dimple.plot.line);
+      myChart.draw();
+
+    });
+  </script>
+</div>
+</html>

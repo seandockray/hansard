@@ -7,12 +7,14 @@ import getopt
 import re
 from bson.code import Code
 
+from flask import Flask, jsonify, url_for
+from flaskrun import flaskrun
+
+from mako.template import Template
 from pymongo import MongoClient
-import sqlite3
 
 client = MongoClient('localhost', 27017)
 db = client.hansard
-conn = sqlite3.connect('db.sql')
 
 
 def get_speaker_phrase_counts(speakername, how_many=25, from_date=None, to_date=None):
@@ -29,7 +31,7 @@ def get_speaker_phrase_counts(speakername, how_many=25, from_date=None, to_date=
                 "}")
     results = db.phrases.map_reduce(map, reduce, "results", query=query)
     for doc in results.find().sort("value", -1).limit(how_many):
-        print doc
+        yield doc
 
 
 def get_phrase_speaker_counts(phrase, how_many=25, from_date=None, to_date=None):
@@ -45,7 +47,7 @@ def get_phrase_speaker_counts(phrase, how_many=25, from_date=None, to_date=None)
                 "}")
     results = db.phrases.map_reduce(map, reduce, "results", query=query)
     for doc in results.find().sort("value", -1).limit(how_many):
-        print doc
+        yield doc
 
 
 def get_phrase_usage(phrase, speakername=None):
@@ -61,7 +63,7 @@ def get_phrase_usage(phrase, speakername=None):
                 "}")
     results = db.phrases.map_reduce(map, reduce, "results", query=query)
     for doc in results.find().sort("_id", 1):
-        print doc
+        yield doc
 
 
 def get_phrases_containing(fragment, how_many=25, from_date=None, to_date=None, speakername=None):
@@ -82,7 +84,62 @@ def get_phrases_containing(fragment, how_many=25, from_date=None, to_date=None, 
         print r
 
 
+app = Flask(__name__)
+@app.route("/speaker/<speakername>")
+def speaker_phrases(speakername):
+    t = Template(filename='templates/rhetoric/bar-chart.html')
+    return t.render(data_url=url_for('api_speaker_phrases', speakername=speakername))
+
+@app.route("/api/v1.0/speaker/<speakername>")
+def api_speaker_phrases(speakername):
+    ret = {"items":[]}
+    results = get_speaker_phrase_counts(speakername, how_many=50)
+    for r in results:
+        ret["items"].append({
+            "label": str(r["_id"]), 
+            "num": int(r["value"]),
+            "url": url_for('phrase_speakers', phrase=str(r["_id"]))
+            })
+    return jsonify(**ret)
+
+@app.route("/phrase/<phrase>")
+def phrase_speakers(phrase):
+    t = Template(filename='templates/rhetoric/bubble-chart.html')
+    return t.render(data_url=url_for('api_phrase_speakers', phrase=phrase))
+
+@app.route("/api/v1.0/phrase/<phrase>")
+def api_phrase_speakers(phrase):
+    ret = {"items":[]}
+    results = get_phrase_speaker_counts(phrase, how_many=50)
+    for r in results:
+        ret["items"].append({
+            "label": str(r["_id"]), 
+            "num": int(r["value"]),
+            "url": url_for('speaker_phrases', speakername=str(r["_id"]))
+            })
+    return jsonify(**ret)
+
+@app.route("/phrase/<phrase>/usage")
+def phrase_usage(phrase):
+    t = Template(filename='templates/rhetoric/line-chart.html')
+    return t.render(data_url=url_for('api_phrase_usage', phrase=phrase))
+
+@app.route("/api/v1.0/phrase/<phrase>/usage")
+def api_phrase_usage(phrase):
+    ret = {"items":[]}
+    results = get_phrase_usage(phrase)
+    for r in results:
+        ret["items"].append({
+            "Date": str(r["_id"]), 
+            "Usage": int(r["value"]),
+            "url": url_for('phrase_speakers', phrase=phrase, from_date=str(r["_id"]), to_date=str(r["_id"]))
+            })
+    return jsonify(**ret)
+
 if __name__=="__main__":
+    flaskrun(app)
+
+    """
     print 'get_speaker_phrase_counts("Christine Anne Milne")'
     get_speaker_phrase_counts("Christine Anne Milne")
     print 'get_speaker_phrase_counts("Christine Anne Milne", from_date="2006-02-08", to_date="2007-02-08")'
@@ -97,3 +154,4 @@ if __name__=="__main__":
     get_phrases_containing("energy")
     print 'get_phrases_containing("energy", speakername="Christine Anne Milne")'
     get_phrases_containing("energy", speakername="Christine Anne Milne")
+    """
