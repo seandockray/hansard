@@ -1,15 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<title>Bar Chart Example</title>
+	<title>${title}</title>
 	<script type="text/javascript" src="http://d3js.org/d3.v2.js"></script>
 	
 	<style>
-		.bar { fill: #DDD; background-color: red; }
+		body { font-family: monospace;}
+		text { font-size:0.75em; }
+		rect { fill: red; }
 	</style>
 
 </head>
 <body>
+	<h1>${title}</h1>
 	<div id="chart"></div>
 </body>
 
@@ -40,7 +43,7 @@
 				.data(data)
 				.enter()
 				.append("rect")
-				.attr("class", function(d, i) {return "bar " + d.label;})
+				.attr("class", function(d, i) {return "bar";})
 				.attr("x", function(d, i) {return 0;})
 				.attr("y", function(d, i) {return dy*i;})
 				.attr("width", function(d, i) {return dx*d.num})
@@ -55,7 +58,7 @@
 				.attr("class", function(d, i) {return "label " + d.label;})
 				.attr("x", 5)
 				.attr("y", function(d, i) {return dy*i + 15;})
-				.text( function(d) {return d.label + " (" + d.num  + ")";})
+				.text( function(d) {return d.label /*+ " (" + d.num  + ")"*/;})
 				.attr("font-size", "15px");
 				//.style("font-weight", "bold");
 		});
