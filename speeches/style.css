@@ -1,0 +1,44 @@
+.speech .candidate {
+  background-color: yellow;
+}
+body {
+  margin: 10px;
+  padding: 0px;
+}
+#title h1 {
+	font-size: 0.85em;
+	background-color: #FFFFCC;
+	padding: 8px;
+}
+#content {
+	width: 600px;
+	margin: 0 auto;
+}
+#content ul.speeches { 
+	font-family: 'Special Elite', cursive;
+  list-style-type:none;
+  color: #333;
+  line-height: 1.5;
+  padding-left: 0px;
+  margin-top: 0px;
+}
+#content ul.speeches li strong { 
+  font-family: sans-serif;
+  color: #000;
+  font-weight: 800;
+  padding-bottom: 0px;
+}
+#content .prev,
+#content .next {
+	font-family: monospace;
+	font-size: 0.6em;
+	margin: 15px 0px 15px 0px;
+}
+a.rhetoric {
+	text-decoration: none;
+	border-bottom: 1px dotted #666;
+	color: #333;
+}
+a.rhetoric:hover {
+	border-bottom: 1px solid #000;
+}

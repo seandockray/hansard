@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>speeches: ${major}: ${minor}</title>
+<link href="https://fonts.googleapis.com/css?family=Oswald|Special+Elite" rel="stylesheet">
+<link rel="stylesheet" href="../style.css">
+<script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.js"></script>
+<script type="text/javascript" src="../phrase-finder.js"></script>
+<script>
+var phrases = ${phrases};
+</script>
+</head>
+<body>
+  <div id="title">
+      <h1><u><a class "about" href="https://github.com/seandockray/rhetoric">speeches</a>:</u> ${major}: ${minor} (${date})</h1>
+  </div>
+  <div id="content">
+    %if prev:
+    <div class="prev"><a href="${prev}">&lt; previous speech</a></div>
+    %endif
+    <ul class="speeches">
+    % for i in parts:
+      <li>
+        <strong>${i[0]}</strong>
+        <div class="speech">${i[1]}</div>
+      </li>
+    % endfor
+    </ul>
+    %if next:
+    <div class="next"><a href="${next}">&gt; next speech</a></div>
+    %endif
+  </div>
+</body>
+</html>

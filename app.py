@@ -2,6 +2,7 @@
 
 import os, sys
 import getopt
+import re
 import xml.etree.ElementTree as etree      
 import urllib
 from sgmllib import SGMLParser
@@ -71,6 +72,26 @@ class Minor(object):
                 print event.interjections()
             else:
                 print '...',event[0]
+
+    def prev_speech(self, speech):
+        s = False
+        for event in self.timeline:
+            if type(event) is Speech:
+                if event.id==speech.id:
+                    return s
+                else:
+                    s = event
+        return s
+
+    def next_speech(self, speech):
+        s = False
+        for event in self.timeline:
+            if type(event) is Speech:
+                if s:
+                    return event
+                if event.id==speech.id:
+                    s = True
+        return False
 
     def interjected_speeches(self):
         ''' Returns all speeches with interjections '''
@@ -240,8 +261,7 @@ def xml_to_interjections(xml_file, html_file, date, prev):
         print "- wrote ",len(slides),"slides to ",html_file
         f.write(pt.render(slides=slides, date=date, prev=prev))
 
-
-def process_loc(loc, save_dir, xml_dir, force=False, keep_xml=False, index=False):
+def process_loc(loc, save_dir, speech_dir, xml_dir, force=False, keep_xml=False, index=False):
     ''' Processes an online directory of hansard xml files '''
     usock = urllib.urlopen(loc)
     parser = URLLister()
@@ -262,51 +282,92 @@ def process_loc(loc, save_dir, xml_dir, force=False, keep_xml=False, index=False
                 # For now, always index the new xml files
                 try:
                     print ".. Indexing noun phrases"
-                    process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
+                    majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
+                    print ".. Building Speech Pages"
+                    build_speech_pages(majors, phrases, xml_file, speech_dir)
                 except:
                     print 'Failed to index:',xml_file
-            if index:
-                print ".. Indexing noun phrases"
-                process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
+            else:
+                if index:
+                    print ".. Indexing noun phrases"
+                    majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
+                else:
+                    print ".. Extracting noun phrases (no-index)"
+                    majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1], index_in_db=False)
+                print ".. Building Speech Pages"
+                build_speech_pages(majors, phrases, xml_file, speech_dir)
             if force or not os.path.exists(dest_file):
-                print ".. Building HTML"
+                print ".. Building interjections Page"
                 xml_to_interjections(xml_file, dest_file, url.split('.')[0], prev)
                 prev = html_file
             if not keep_xml:
                 os.unlink(xml_file)
             count += 1
 
-def process_speeches(xml_file, date, house):
+
+def build_speech_pages(majors, phrases, xml_file, speech_dir):
+    ''' Renders the XML as HTML with links to every phrase '''
+    st = Template(filename='templates/speech.html')    
+    date = xml_file.split('/')[2].split('.')[0]
+    html = ''
+    for major in majors:
+        for minor in major.minors:
+            for event in minor.timeline:
+                if type(event) is Speech:
+                    speech_phrases = []
+                    if event.id in phrases[major.id][minor.id]:
+                        speech_phrases = phrases[major.id][minor.id][event.id]
+                    speech_file = os.path.join(speech_dir, event.id+'.html')
+                    with open(speech_file, 'w') as f:
+                        print "- wrote speech: ", speech_file
+                        f.write(st.render(
+                            parts=event.get_script(), 
+                            date=date, 
+                            prev=minor.prev_speech(event).id+'.html' if minor.prev_speech(event) else False,
+                            next=minor.next_speech(event).id+'.html' if minor.next_speech(event) else False,
+                            phrases=[str(p) for p in speech_phrases],
+                            major=major.title,
+                            minor=minor.title
+                        ))
+
+
+def process_speeches(xml_file, date, house, index_in_db=True):
     c = conn.cursor()
     year = date.split('-')[0]
     count = 0
+    all_noun_phrases = {}
     #from textblob import TextBlob
     from pattern.en import parsetree
     from pattern.search import search
     majors = process_xml(xml_file)
     for major in majors:
+        all_noun_phrases[major.id] = {}
         for minor in major.minors:
+            all_noun_phrases[major.id][minor.id] = {}
             for event in minor.timeline:
                 if type(event) is Speech:
+                    all_noun_phrases[major.id][minor.id][event.id] = []
                     for speaker, speech in event.get_script():
                         s = MLStripper()
                         s.feed(speech)
-                        #blob = TextBlob(s.get_data())
-                        #print blob.noun_phrases
                         pt = parsetree(s.get_data(), relations=True, lemmata=True)
                         noun_phrases = [match.constituents()[0].string.lower() for match in search('NP', pt) if match.constituents()[0].string.lower() not in ['i','you','it']]
                         #adjectives = [match.constituents()[0].string.lower() for match in search('JJ', pt) ]
-                        for np in noun_phrases:
-                            try:
-                                insert_record(np, speaker, event.id, minor.id, minor.title, date, year, house, event.url)
-                            except:
-                                print "Error: ", np, speaker, event.id, minor.id, minor.title, date, year, house
-                                print                        
+                        if index_in_db:
+                            print "Indexing noun phrases in DB"
+                            for np in noun_phrases:
+                                try:
+                                    insert_record(np, speaker, event.id, minor.id, minor.title, date, year, house, event.url)
+                                except:
+                                    print "Error: ", np, speaker, event.id, minor.id, minor.title, date, year, house
+                                    print                        
                         count += len(noun_phrases)
+                        all_noun_phrases[major.id][minor.id][event.id].extend(noun_phrases)
                         
             conn.commit()
-    print count
+    print "found: ",count," noun phrases"
     c.close()
+    return majors, all_noun_phrases
 
 
 def insert_record(phrase, speakername, speechid, headingid, headingtitle, date, year, house, url):
@@ -316,66 +377,13 @@ def insert_record(phrase, speakername, speechid, headingid, headingtitle, date, 
         "speakername" : speakername,
         "speechid" : speechid,
         "headingid" : headingid,
-        "headingtitle" : headingtitle,
+        "headingtitle" : headingtitle[:64],
         "date" : date,
         "year" : year,
         "house" : house,
         "url" : url,
     }
     db.phrases.insert_one(doc)
-
-def copy_sqlite_to_mongo():
-    ''' This will be deleted after it is run once '''
-    db = client.hansard
-    c = conn.cursor()
-    start = 0
-    step = 10000
-    batch_size = 100
-    batch = []
-    go = True
-    while go:
-        go = False
-        values = (start,step)
-        c.execute('select * from noun_phrases limit ?,?', values)
-        print start
-        for row in c:
-            go = True
-            batch.append({
-                "phrase" : row[0],
-                "speakername" : row[1],
-                "speechid" : row[2],
-                "headingid" : row[3],
-                "headingtitle" : row[4],
-                "date" : row[5],
-                "year" : row[6],
-                "house" : row[7],
-                "url" : row[8],
-            })
-            if len(batch)>=batch_size:
-                db.phrases.insert_many(batch)
-                batch = []
-        if len(batch)>0:
-            db.phrases.insert_many(batch)
-            batch = []
-        start += step
-    c.close()
-
-###
-# DB related
-###
-def init_db():
-    copy_sqlite_to_mongo()
-    """
-    c = conn.cursor()
-    try:
-        c.execute('''drop table noun_phrases''')
-    except:
-        pass
-    c.execute('''create table noun_phrases
-(phrase text, speakername text, speechid text, headingid text, headingtitle text, date text, year text, house text, url text)''')        
-    conn.commit()
-    c.close()
-    """
 
 
 if __name__=="__main__":
@@ -398,14 +406,16 @@ if __name__=="__main__":
       elif opt in ("-i", "--index"):
          index = True        
       elif opt in ("-c", "--create"):
-         init_db()
-         print "Initialized the database"
+         #init_db()
+         print "This command does nothing now."
          sys.exit()
     # Now the program
     xml_senate_dest = os.path.join('xml','s')
     xml_representative_dest = os.path.join('xml','r')
     senate_dest = os.path.join('html','s')
     representative_dest = os.path.join('html','r')
+    senate_conv_dest = os.path.join('speeches','s')
+    representative_conv_dest = os.path.join('speeches','r')
     if not os.path.exists(xml_senate_dest):
         os.makedirs(xml_senate_dest)
     if not os.path.exists(xml_representative_dest):
@@ -414,8 +424,12 @@ if __name__=="__main__":
         os.makedirs(senate_dest)
     if not os.path.exists(representative_dest):
         os.makedirs(representative_dest)
-    process_loc(senate_debates_loc, senate_dest, xml_senate_dest, force=force, keep_xml=keep, index=index)
-    process_loc(representative_debates_loc, representative_dest, xml_representative_dest, force=force, keep_xml=keep, index=index)
+    if not os.path.exists(senate_conv_dest):
+        os.makedirs(senate_conv_dest)
+    if not os.path.exists(representative_conv_dest):
+        os.makedirs(representative_conv_dest)
+    process_loc(senate_debates_loc, senate_dest, senate_conv_dest, xml_senate_dest, force=force, keep_xml=keep, index=index)
+    process_loc(representative_debates_loc, representative_dest, representative_conv_dest, xml_representative_dest, force=force, keep_xml=keep, index=index)
     
     
     #get_noun_phrases_for_speaker('Ian Gordon Campbell')
