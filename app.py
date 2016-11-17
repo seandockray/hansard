@@ -307,7 +307,7 @@ def process_loc(loc, save_dir, speech_dir, xml_dir, force=False, keep_xml=False,
 
 def build_speech_pages(majors, phrases, xml_file, speech_dir):
     ''' Renders the XML as HTML with links to every phrase '''
-    st = Template(filename='templates/speech.html')    
+    st = Template(filename='templates/speech.html', input_encoding='utf-8', output_encoding='utf-8')    
     date = xml_file.split('/')[2].split('.')[0]
     html = ''
     for major in majors:
