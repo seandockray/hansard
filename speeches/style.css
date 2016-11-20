@@ -42,3 +42,6 @@ a.rhetoric {
 a.rhetoric:hover {
 	border-bottom: 1px solid #000;
 }
+a.rhetoric.found {
+	background-color: #FFFF00;
+}

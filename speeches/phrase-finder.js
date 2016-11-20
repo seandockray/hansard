@@ -2,6 +2,17 @@ jQuery= jQuery.noConflict();
 
 var url_base = "http://rhetoric.metadada.xyz/phrase/";
 
+function qs_param(name, url) {
+    if (!url) {
+      url = window.location.href;
+    }
+    name = name.replace(/[\[\]]/g, "\\$&");
+    var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+        results = regex.exec(url);
+    if (!results) return null;
+    if (!results[2]) return '';
+    return decodeURIComponent(results[2].replace(/\+/g, " "));
+}
 
 function stripped(s) {
   s = s.replace(/\W/g, '');
@@ -76,6 +87,7 @@ function continues_phrase(words, next_word) {
 jQuery(document).ready(function($){
 
     function convert_candidates_to_link($eles, selector ,phrase) {
+      var search_for = qs_param('search');
       var str = [];
       for (var i=0; i<$eles.length; i++) {
         str.push($eles[i].text());
@@ -87,6 +99,9 @@ jQuery(document).ready(function($){
           target: '_blank',
           class: 'rhetoric'
       })
+      if (search_for && search_for==phrase) {
+        $a.addClass('found');
+      }
       $(selector).wrapAll( $a ).parent().text(str.join(' '));
     }
 
