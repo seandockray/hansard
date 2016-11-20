@@ -3,6 +3,7 @@
 import os, sys
 import getopt
 import re
+import glob
 import xml.etree.ElementTree as etree      
 import urllib
 from sgmllib import SGMLParser
@@ -261,7 +262,7 @@ def xml_to_interjections(xml_file, html_file, date, prev):
         print "- wrote ",len(slides),"slides to ",html_file
         f.write(pt.render(slides=slides, date=date, prev=prev))
 
-def process_loc(loc, save_dir, speech_dir, xml_dir, force=False, keep_xml=False, index=False):
+def process_loc(loc, save_dir, speech_dir, xml_dir, force=False, keep_xml=False, index=False, build_speeches=False):
     ''' Processes an online directory of hansard xml files '''
     usock = urllib.urlopen(loc)
     parser = URLLister()
@@ -283,19 +284,25 @@ def process_loc(loc, save_dir, speech_dir, xml_dir, force=False, keep_xml=False,
                 try:
                     print ".. Indexing noun phrases"
                     majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
-                    print ".. Building Speech Pages"
-                    build_speech_pages(majors, phrases, xml_file, speech_dir)
+                    if build_speeches:
+                        print ".. Building Speech Pages"
+                        build_speech_pages(majors, phrases, xml_file, speech_dir)
                 except:
                     print 'Failed to index:',xml_file
             else:
                 if index:
                     print ".. Indexing noun phrases"
                     majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1])
-                else:
-                    print ".. Extracting noun phrases (no-index)"
-                    majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1], index_in_db=False)
-                print ".. Building Speech Pages"
-                build_speech_pages(majors, phrases, xml_file, speech_dir)
+                    if build_speeches:
+                        print ".. Building Speech Pages"
+                        build_speech_pages(majors, phrases, xml_file, speech_dir)
+                elif build_speeches:
+                    # Don't do this if speeches for this day already exist
+                    if not glob.glob('%s/%s*' % (speech_dir, xml_file.split('/')[2].split('.')[0])):
+                        print ".. Extracting noun phrases (no-index)"
+                        majors, phrases = process_speeches(xml_file, xml_file.split('/')[2].split('.')[0], xml_file.split('/')[1], index_in_db=False)
+                        print ".. Building Speech Pages"
+                        build_speech_pages(majors, phrases, xml_file, speech_dir)
             if force or not os.path.exists(dest_file):
                 print ".. Building interjections Page"
                 xml_to_interjections(xml_file, dest_file, url.split('.')[0], prev)
@@ -390,14 +397,15 @@ if __name__=="__main__":
     force = False # force rebuild the html
     keep = False # keep xml files around
     index = False #index the noun phrases?
+    speeches = False
     try:
-      opts, args = getopt.getopt(sys.argv[1:],"hfkci",["force","keep","create","index"])
+      opts, args = getopt.getopt(sys.argv[1:],"hfkcis",["force","keep","create","index","speeches"])
     except getopt.GetoptError:
-      print 'app.py -f -k'
+      print 'Usually should be: app.py -k -s'
       sys.exit(2)
     for opt, arg in opts:
       if opt == '-h':
-         print 'app.py -f (force rebuild of html) -k (keep xml files) -i(index noun phrases) -c (create database)'
+         print 'app.py -f (force rebuild of html) -k (keep xml files) -i(index noun phrases) -c (create database) -s(make speech pages)'
          sys.exit()
       elif opt in ("-f", "--force"):
          force = True
@@ -405,6 +413,8 @@ if __name__=="__main__":
          keep = True
       elif opt in ("-i", "--index"):
          index = True        
+      elif opt in ("-s", "--speeches"):
+         speeches = True        
       elif opt in ("-c", "--create"):
          #init_db()
          print "This command does nothing now."
@@ -428,8 +438,8 @@ if __name__=="__main__":
         os.makedirs(senate_conv_dest)
     if not os.path.exists(representative_conv_dest):
         os.makedirs(representative_conv_dest)
-    process_loc(senate_debates_loc, senate_dest, senate_conv_dest, xml_senate_dest, force=force, keep_xml=keep, index=index)
-    process_loc(representative_debates_loc, representative_dest, representative_conv_dest, xml_representative_dest, force=force, keep_xml=keep, index=index)
+    process_loc(senate_debates_loc, senate_dest, senate_conv_dest, xml_senate_dest, force=force, keep_xml=keep, index=index, build_speeches=speeches)
+    process_loc(representative_debates_loc, representative_dest, representative_conv_dest, xml_representative_dest, force=force, keep_xml=keep, index=index, build_speeches=speeches)
     
     
     #get_noun_phrases_for_speaker('Ian Gordon Campbell')
